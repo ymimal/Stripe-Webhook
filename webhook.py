@@ -12,7 +12,6 @@ MONGO_DB = os.getenv("MONGO_DB", "")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
-# MongoDB
 mongo_client = None
 premium_db = None
 
@@ -55,24 +54,34 @@ def stripe_webhook():
 
 def handle_payment_success(session):
     if premium_db is None:
-        print("⚠️ MongoDB not available")
+        print("⚠️ MongoDB not connected")
         return
 
     try:
-        # Safe way to get metadata
-        raw_metadata = getattr(session, "metadata", None)
-        if raw_metadata:
-            metadata = dict(raw_metadata) if hasattr(raw_metadata, "keys") else raw_metadata
-        else:
-            metadata = {}
+        # Safest way to extract metadata
+        metadata = {}
+        raw_meta = getattr(session, "metadata", None)
+        
+        if raw_meta:
+            if hasattr(raw_meta, "to_dict"):
+                metadata = raw_meta.to_dict()
+            elif isinstance(raw_meta, dict):
+                metadata = raw_meta
+            else:
+                try:
+                    metadata = dict(raw_meta)
+                except:
+                    metadata = {}
 
-        user_id = int(metadata.get("user_id", 0))
+        user_id_str = metadata.get("user_id") or getattr(raw_meta, "user_id", None)
+        
+        if not user_id_str:
+            print("⚠️ No user_id in metadata")
+            return
+            
+        user_id = int(user_id_str)
         plan = metadata.get("plan", "monthly")
         payment_type = metadata.get("type", "subscription")
-
-        if user_id == 0:
-            print("⚠️ No user_id found in metadata")
-            return
 
         days = 36500 if payment_type == "lifetime" else 365
         expire_date = datetime.datetime.utcnow() + datetime.timedelta(days=days)
@@ -90,7 +99,7 @@ def handle_payment_success(session):
         print(f"✅ Payment Success → User: {user_id} | Plan: {plan}")
 
     except Exception as e:
-        print(f"Error in handle_payment_success: {e}")
+        print(f"Error in handle_payment_success: {str(e)}")
 
 
 def handle_renewal(invoice):
@@ -108,9 +117,9 @@ def handle_renewal(invoice):
         if user:
             new_expiry = user.get("expire_date", datetime.datetime.utcnow()) + datetime.timedelta(days=30)
             premium_db.update_one({"_id": user["_id"]}, {"$set": {"expire_date": new_expiry}})
-            print(f"🔄 Renewed for user {user['_id']}")
+            print(f"🔄 Renewed subscription for user {user['_id']}")
     except Exception as e:
-        print(f"Renewal error: {e}")
+        print(f"Renewal error: {str(e)}")
 
 
 if __name__ == "__main__":
