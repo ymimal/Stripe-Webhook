@@ -26,7 +26,7 @@ if MONGO_DB:
 
 @app.route("/")
 def home():
-    return "Stripe Webhook Running ✅"
+    return "✅ Stripe Webhook is running"
 
 
 @app.route("/webhook/stripe", methods=["POST"])
@@ -58,10 +58,10 @@ def handle_payment_success(session):
         return
 
     try:
-        # Safest way to extract metadata
+        # Very safe metadata extraction
         metadata = {}
         raw_meta = getattr(session, "metadata", None)
-        
+
         if raw_meta:
             if hasattr(raw_meta, "to_dict"):
                 metadata = raw_meta.to_dict()
@@ -73,13 +73,15 @@ def handle_payment_success(session):
                 except:
                     metadata = {}
 
-        user_id_str = metadata.get("user_id") or getattr(raw_meta, "user_id", None)
-        
-        if not user_id_str:
-            print("⚠️ No user_id in metadata")
+        print(f"📦 Metadata received from Stripe: {metadata}")   # ← Debug line
+
+        user_id = metadata.get("user_id")
+
+        if not user_id:
+            print("❌ No user_id found in metadata!")
             return
-            
-        user_id = int(user_id_str)
+
+        user_id = int(user_id)
         plan = metadata.get("plan", "monthly")
         payment_type = metadata.get("type", "subscription")
 
@@ -96,10 +98,11 @@ def handle_payment_success(session):
             }},
             upsert=True
         )
-        print(f"✅ Payment Success → User: {user_id} | Plan: {plan}")
+        
+        print(f"✅✅✅ Payment Success! User: {user_id} | Plan: {plan}")
 
     except Exception as e:
-        print(f"Error in handle_payment_success: {str(e)}")
+        print(f"❌ Error in handle_payment_success: {str(e)}")
 
 
 def handle_renewal(invoice):
@@ -117,7 +120,7 @@ def handle_renewal(invoice):
         if user:
             new_expiry = user.get("expire_date", datetime.datetime.utcnow()) + datetime.timedelta(days=30)
             premium_db.update_one({"_id": user["_id"]}, {"$set": {"expire_date": new_expiry}})
-            print(f"🔄 Renewed subscription for user {user['_id']}")
+            print(f"🔄 Renewed for user {user['_id']}")
     except Exception as e:
         print(f"Renewal error: {str(e)}")
 
