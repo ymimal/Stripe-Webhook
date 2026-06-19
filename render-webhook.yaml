@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: stripe-webhook
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements-webhook.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT webhook:app
+    healthCheckPath: /
+    envVars:
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: MONGO_DB
+        sync: false
+      - key: STRIPE_CURRENCY
+        value: "usd"
