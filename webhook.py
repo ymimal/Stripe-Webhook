@@ -12,7 +12,7 @@ MONGO_DB = os.getenv("MONGO_DB", "")
 
 stripe.api_key = STRIPE_SECRET_KEY
 
-# MongoDB Connection
+# MongoDB
 mongo_client = None
 premium_db = None
 
@@ -22,14 +22,12 @@ if MONGO_DB:
         premium_db = mongo_client.premium.premium_db
         print("✅ MongoDB connected successfully")
     except Exception as e:
-        print(f"❌ MongoDB Connection Failed: {e}")
-else:
-    print("⚠️ MONGO_DB environment variable is not set")
+        print(f"❌ MongoDB Error: {e}")
 
 
 @app.route("/")
 def home():
-    return "Stripe Webhook is Running ✅"
+    return "Stripe Webhook Running ✅"
 
 
 @app.route("/webhook/stripe", methods=["POST"])
@@ -57,13 +55,24 @@ def stripe_webhook():
 
 def handle_payment_success(session):
     if premium_db is None:
-        print("⚠️ MongoDB not connected. Skipping payment save.")
+        print("⚠️ MongoDB not available")
         return
+
     try:
-        metadata = getattr(session, "metadata", {}) or {}
-        user_id = int(metadata.get("user_id"))
+        # Safe way to get metadata
+        raw_metadata = getattr(session, "metadata", None)
+        if raw_metadata:
+            metadata = dict(raw_metadata) if hasattr(raw_metadata, "keys") else raw_metadata
+        else:
+            metadata = {}
+
+        user_id = int(metadata.get("user_id", 0))
         plan = metadata.get("plan", "monthly")
         payment_type = metadata.get("type", "subscription")
+
+        if user_id == 0:
+            print("⚠️ No user_id found in metadata")
+            return
 
         days = 36500 if payment_type == "lifetime" else 365
         expire_date = datetime.datetime.utcnow() + datetime.timedelta(days=days)
@@ -79,6 +88,7 @@ def handle_payment_success(session):
             upsert=True
         )
         print(f"✅ Payment Success → User: {user_id} | Plan: {plan}")
+
     except Exception as e:
         print(f"Error in handle_payment_success: {e}")
 
@@ -98,9 +108,9 @@ def handle_renewal(invoice):
         if user:
             new_expiry = user.get("expire_date", datetime.datetime.utcnow()) + datetime.timedelta(days=30)
             premium_db.update_one({"_id": user["_id"]}, {"$set": {"expire_date": new_expiry}})
-            print(f"🔄 Subscription renewed for user {user['_id']}")
+            print(f"🔄 Renewed for user {user['_id']}")
     except Exception as e:
-        print(f"Error in handle_renewal: {e}")
+        print(f"Renewal error: {e}")
 
 
 if __name__ == "__main__":
