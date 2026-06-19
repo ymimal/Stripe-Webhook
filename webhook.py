@@ -20,16 +20,16 @@ if MONGO_DB:
     try:
         mongo_client = MongoClient(MONGO_DB)
         premium_db = mongo_client.premium.premium_db
-        print("✅ Connected to MongoDB")
+        print("✅ MongoDB connected successfully")
     except Exception as e:
-        print(f"❌ MongoDB Error: {e}")
+        print(f"❌ MongoDB Connection Failed: {e}")
 else:
-    print("⚠️ MONGO_DB not set")
+    print("⚠️ MONGO_DB environment variable is not set")
 
 
 @app.route("/")
 def home():
-    return "Stripe Webhook Running ✅"
+    return "Stripe Webhook is Running ✅"
 
 
 @app.route("/webhook/stripe", methods=["POST"])
@@ -44,12 +44,10 @@ def stripe_webhook():
     except stripe.error.SignatureVerificationError:
         return jsonify({"error": "Invalid signature"}), 400
 
-    # Handle new payment / subscription
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         handle_payment_success(session)
 
-    # Handle recurring subscription renewal
     elif event["type"] == "invoice.payment_succeeded":
         invoice = event["data"]["object"]
         handle_renewal(invoice)
@@ -58,13 +56,14 @@ def stripe_webhook():
 
 
 def handle_payment_success(session):
-    if not premium_db:
-        print("⚠️ MongoDB not connected")
+    if premium_db is None:
+        print("⚠️ MongoDB not connected. Skipping payment save.")
         return
     try:
-        user_id = int(session.get("metadata", {}).get("user_id"))
-        plan = session.get("metadata", {}).get("plan", "monthly")
-        payment_type = session.get("metadata", {}).get("type", "subscription")
+        metadata = getattr(session, "metadata", {}) or {}
+        user_id = int(metadata.get("user_id"))
+        plan = metadata.get("plan", "monthly")
+        payment_type = metadata.get("type", "subscription")
 
         days = 36500 if payment_type == "lifetime" else 365
         expire_date = datetime.datetime.utcnow() + datetime.timedelta(days=days)
@@ -81,14 +80,13 @@ def handle_payment_success(session):
         )
         print(f"✅ Payment Success → User: {user_id} | Plan: {plan}")
     except Exception as e:
-        print(f"Error handling payment: {e}")
+        print(f"Error in handle_payment_success: {e}")
 
 
 def handle_renewal(invoice):
-    if not premium_db:
+    if premium_db is None:
         return
     try:
-        # Compatible with new Stripe SDK
         subscription_id = getattr(invoice, "subscription", None)
         if not subscription_id:
             return
@@ -102,7 +100,7 @@ def handle_renewal(invoice):
             premium_db.update_one({"_id": user["_id"]}, {"$set": {"expire_date": new_expiry}})
             print(f"🔄 Subscription renewed for user {user['_id']}")
     except Exception as e:
-        print(f"Renewal error: {e}")
+        print(f"Error in handle_renewal: {e}")
 
 
 if __name__ == "__main__":
